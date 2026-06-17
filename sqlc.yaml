@@ -2,16 +2,14 @@ version: "2"
 
 sql:
   - engine: "postgresql"
-
     schema:
-      - "internal/db/migrations"
-
+      - "db/migrations"
     queries:
-      - "internal/db/queries"
-
+      - "db/queries"
     gen:
       go:
         package: "db"
-        out: "internal/db/generated"
-
+        out: "internal/db"
+        emit_json_tags: true
+        emit_pointers_for_null_types: false
         sql_package: "pgx/v5"
