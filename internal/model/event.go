@@ -20,4 +20,5 @@ type IngestPayload struct {
 	TenantID  uuid.UUID
 	Timestamp time.Time
 	ID        uuid.UUID
+	TenantSecret string 
 }
