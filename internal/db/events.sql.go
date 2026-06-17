@@ -156,6 +156,46 @@ func (q *Queries) InsertEvent(ctx context.Context, arg InsertEventParams) (pgtyp
 	return id, err
 }
 
+const listAllEventsOrdered = `-- name: ListAllEventsOrdered :many
+SELECT id, tenant_id, actor_id, actor_type, action, resource_type, resource_id, metadata, timestamp, prev_hash, hash, created_at 
+FROM audit_events
+WHERE tenant_id = $1
+ORDER BY timestamp ASC
+`
+
+func (q *Queries) ListAllEventsOrdered(ctx context.Context, tenantID pgtype.UUID) ([]AuditEvent, error) {
+	rows, err := q.db.Query(ctx, listAllEventsOrdered, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []AuditEvent
+	for rows.Next() {
+		var i AuditEvent
+		if err := rows.Scan(
+			&i.ID,
+			&i.TenantID,
+			&i.ActorID,
+			&i.ActorType,
+			&i.Action,
+			&i.ResourceType,
+			&i.ResourceID,
+			&i.Metadata,
+			&i.Timestamp,
+			&i.PrevHash,
+			&i.Hash,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listEvents = `-- name: ListEvents :many
 SELECT id, tenant_id, actor_id, actor_type, action, resource_type, resource_id, metadata, timestamp, prev_hash, hash, created_at
 FROM audit_events
@@ -172,6 +212,76 @@ type ListEventsParams struct {
 
 func (q *Queries) ListEvents(ctx context.Context, arg ListEventsParams) ([]AuditEvent, error) {
 	rows, err := q.db.Query(ctx, listEvents, arg.TenantID, arg.Limit, arg.Offset)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []AuditEvent
+	for rows.Next() {
+		var i AuditEvent
+		if err := rows.Scan(
+			&i.ID,
+			&i.TenantID,
+			&i.ActorID,
+			&i.ActorType,
+			&i.Action,
+			&i.ResourceType,
+			&i.ResourceID,
+			&i.Metadata,
+			&i.Timestamp,
+			&i.PrevHash,
+			&i.Hash,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listEventsFilered = `-- name: ListEventsFilered :many
+SELECT id, tenant_id, actor_id, actor_type, action, resource_type, resource_id, metadata, timestamp, prev_hash, hash, created_at
+FROM audit_events
+where tenant_id = $1
+AND ($2::TEXT IS NULL OR actor_id = $2)
+AND ($3::TEXT IS NULL OR action = $3)
+AND ($4::TEXT IS NULL OR resource_type = $4)
+AND ($5::TEXT IS NULL OR resource_id = $5)
+AND ($6::timestampz IS NULL OR timestamp >= $6)
+AND ($7::timestampz IS NULL OR timestamp <= $7)
+ORDER BY timestamp DESC
+LIMIT $9 
+OFFSET $8
+`
+
+type ListEventsFileredParams struct {
+	TenantID     pgtype.UUID `json:"tenant_id"`
+	ActorID      string      `json:"actor_id"`
+	Action       string      `json:"action"`
+	ResourceType string      `json:"resource_type"`
+	ResourceID   string      `json:"resource_id"`
+	StartTime    interface{} `json:"start_time"`
+	EndTime      interface{} `json:"end_time"`
+	PageOffset   int32       `json:"page_offset"`
+	PageLimit    int32       `json:"page_limit"`
+}
+
+func (q *Queries) ListEventsFilered(ctx context.Context, arg ListEventsFileredParams) ([]AuditEvent, error) {
+	rows, err := q.db.Query(ctx, listEventsFilered,
+		arg.TenantID,
+		arg.ActorID,
+		arg.Action,
+		arg.ResourceType,
+		arg.ResourceID,
+		arg.StartTime,
+		arg.EndTime,
+		arg.PageOffset,
+		arg.PageLimit,
+	)
 	if err != nil {
 		return nil, err
 	}

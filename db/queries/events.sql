@@ -38,3 +38,23 @@ LIMIT $2 OFFSET $3;
 SELECT *
 FROM audit_events
 WHERE id = $1 AND tenant_id = $2;
+
+-- name: ListAllEventsOrdered :many
+SELECT * 
+FROM audit_events
+WHERE tenant_id = $1
+ORDER BY timestamp ASC;
+
+-- name: ListEventsFilered :many
+SELECT *
+FROM audit_events
+where tenant_id = @tenant_id
+AND (@actor_id::TEXT IS NULL OR actor_id = @actor_id)
+AND (@action::TEXT IS NULL OR action = @action)
+AND (@resource_type::TEXT IS NULL OR resource_type = @resource_type)
+AND (@resource_id::TEXT IS NULL OR resource_id = @resource_id)
+AND (@start_time::timestampz IS NULL OR timestamp >= @start_time)
+AND (@end_time::timestampz IS NULL OR timestamp <= @end_time)
+ORDER BY timestamp DESC
+LIMIT @page_limit 
+OFFSET @page_offset;
