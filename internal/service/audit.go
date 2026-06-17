@@ -7,10 +7,12 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"hash/fnv"
 	"sync"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/zjunaidz/auditd/internal/db"
@@ -63,39 +65,52 @@ func (s *AuditService) ResolveTenant(ctx context.Context, apiKey string) (*db.Ge
 }
 
 func (s *AuditService) IngestEvent(ctx context.Context, payload model.IngestPayload, tenantSecret string) (uuid.UUID, error) {
-	prevHash := genesisHash
-	lastHash, err := s.queries.GetLastEventHash(ctx, pgtype.UUID{Bytes: payload.TenantID, Valid: true})
-	if err == nil {
-		prevHash = lastHash
-	}
 
-	hash := s.computeEventHash(payload, prevHash, tenantSecret)
+	var resultID uuid.UUID
+	err := pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
 
-	//Marshall metadata
-	metaBytes, err := json.Marshal(payload.Input.Metadata)
-	if err != nil {
-		metaBytes = []byte("{}") // Fallback to empty JSON object
-	}
+		qtx := s.queries.WithTx(tx)
 
-	id, err := s.queries.InsertEvent(ctx, db.InsertEventParams{
-		ID:           pgtype.UUID{Bytes: payload.ID, Valid: true},
-		TenantID:     pgtype.UUID{Bytes: payload.TenantID, Valid: true},
-		ActorID:      payload.Input.ActorID,
-		ActorType:    payload.Input.ActorType,
-		Action:       payload.Input.Action,
-		ResourceID:   payload.Input.ResourceID,
-		ResourceType: payload.Input.ResourceType,
-		Metadata:     metaBytes,
-		Timestamp:    pgtype.Timestamptz{Time: payload.Timestamp, Valid: true},
-		CreatedAt:    pgtype.Timestamptz{Time: time.Now(), Valid: true},
-		PrevHash:     prevHash,
-		Hash:         hash,
+		lockKey := tenantLockKey(payload.TenantID)
+		if _, err := tx.Exec(ctx, "SELECT pg_advisory_xact_lock($1)", lockKey); err != nil {
+			return err
+		}
+
+		prevHash := genesisHash
+		lastHash, err := qtx.GetLastEventHash(ctx, pgtype.UUID{Bytes: payload.TenantID, Valid: true})
+		if err == nil {
+			prevHash = lastHash
+		}
+
+		hash := s.computeEventHash(payload, prevHash, tenantSecret)
+
+		//Marshall metadata
+		metaBytes, err := json.Marshal(payload.Input.Metadata)
+		if err != nil {
+			metaBytes = []byte("{}") // Fallback to empty JSON object
+		}
+
+		id, err := s.queries.InsertEvent(ctx, db.InsertEventParams{
+			ID:           pgtype.UUID{Bytes: payload.ID, Valid: true},
+			TenantID:     pgtype.UUID{Bytes: payload.TenantID, Valid: true},
+			ActorID:      payload.Input.ActorID,
+			ActorType:    payload.Input.ActorType,
+			Action:       payload.Input.Action,
+			ResourceID:   payload.Input.ResourceID,
+			ResourceType: payload.Input.ResourceType,
+			Metadata:     metaBytes,
+			Timestamp:    pgtype.Timestamptz{Time: payload.Timestamp, Valid: true},
+			CreatedAt:    pgtype.Timestamptz{Time: time.Now(), Valid: true},
+			PrevHash:     prevHash,
+			Hash:         hash,
+		})
+		if err != nil {
+			return err
+		}
+		resultID = id.Bytes
+		return nil
 	})
-	if err != nil {
-		return uuid.UUID{}, err
-	}
-	return id.Bytes, nil
-
+	return resultID, err
 }
 
 func (s *AuditService) ListEvents(ctx context.Context, tenantID uuid.UUID, limit, offset int) ([]db.AuditEvent, error) {
@@ -119,4 +134,10 @@ func (s *AuditService) computeEventHash(payload model.IngestPayload, prevHash st
 	mac := hmac.New(sha256.New, []byte(secret))
 	mac.Write([]byte(data))
 	return hex.EncodeToString(mac.Sum(nil))
+}
+
+func tenantLockKey(id uuid.UUID) int64 {
+	h := fnv.New64a()
+	h.Write(id[:])
+	return int64(h.Sum64())
 }
