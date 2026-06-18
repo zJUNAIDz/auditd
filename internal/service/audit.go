@@ -3,7 +3,9 @@ package service
 import (
 	"context"
 	"crypto/hmac"
+	"crypto/rand"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -140,4 +142,63 @@ func tenantLockKey(id uuid.UUID) int64 {
 	h := fnv.New64a()
 	h.Write(id[:])
 	return int64(h.Sum64())
+}
+
+type VerifyResult struct {
+	Verified   bool   `json:"verified"`
+	EventCount int    `json:"event_count"`
+	BrokenAt   string `json:"broken_at,omitempty"`
+}
+
+func (s *AuditService) VerifyChain(ctx context.Context, tenantID uuid.UUID, tenantSecret string) (VerifyResult, error) {
+	rows, err := s.queries.ListAllEventsOrdered(ctx, pgtype.UUID{Bytes: tenantID, Valid: true})
+	if err != nil {
+		return VerifyResult{}, err
+	}
+
+	prevHash := genesisHash
+
+	for _, row := range rows {
+		payload := model.IngestPayload{
+			ID:        row.ID.Bytes,
+			TenantID:  row.TenantID.Bytes,
+			Timestamp: row.Timestamp.Time,
+			Input: model.EventInput{
+				ActorID:      row.ActorID,
+				ActorType:    row.ActorType,
+				Action:       row.Action,
+				ResourceType: row.ResourceType,
+				ResourceID:   row.ResourceID,
+			},
+		}
+
+		expectedHash := s.computeEventHash(payload, prevHash, tenantSecret)
+		if expectedHash != row.Hash {
+			return VerifyResult{
+				Verified:   false,
+				EventCount: len(rows),
+				BrokenAt:   uuid.UUID(row.ID.Bytes).String(),
+			}, nil
+		}
+		prevHash = row.Hash
+	}
+
+	return VerifyResult{
+		Verified:   true,
+		EventCount: len(rows),
+	}, nil
+}
+
+func (s *AuditService) CreateTenant(ctx context.Context, name string) (db.Tenant, string, error) {
+	apiKey := generateSecureKey(32)
+	hmacSecret := generateSecureKey(32)
+
+	tenant, err := s.queries.CreateTenant(ctx, db.CreateTenantParams{Name: name, ApiKey: apiKey, HmacSecret: hmacSecret})
+
+	return tenant, apiKey, err
+}
+func generateSecureKey(n int) string {
+	b := make([]byte, n)
+	rand.Read(b)
+	return base64.URLEncoding.EncodeToString(b)
 }
