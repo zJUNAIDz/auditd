@@ -7,6 +7,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/zjunaidz/auditd/internal/db"
 	"github.com/zjunaidz/auditd/internal/model"
 )
@@ -32,13 +33,12 @@ func (h *Handler) PostEvent(c *gin.Context) {
 		ID:        uuid.New(),
 	}
 
-	id, err := h.svc.IngestEvent(c.Request.Context(), payload, tenant.HmacSecret)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to ingest event", "details": err.Error()})
+	if !h.queue.Enqueue(payload) {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "Event queue is full, please try again later"})
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"id": id.String(), "status": "accepted"})
+	c.JSON(http.StatusOK, gin.H{"id": payload.ID.String(), "status": "accepted"})
 }
 
 func (h *Handler) ListEvents(c *gin.Context) {
