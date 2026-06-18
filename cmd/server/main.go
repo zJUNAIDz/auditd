@@ -4,6 +4,11 @@ import (
 	"context"
 	"log"
 	"net/http"
+	"os"
+	"os/signal"
+	"sync"
+	"syscall"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/golang-migrate/migrate/v4"
@@ -15,6 +20,7 @@ import (
 	"github.com/zjunaidz/auditd/internal/middleware"
 	"github.com/zjunaidz/auditd/internal/queue"
 	"github.com/zjunaidz/auditd/internal/service"
+	"github.com/zjunaidz/auditd/internal/worker"
 )
 
 func main() {
@@ -44,7 +50,14 @@ func main() {
 	log.Println("Database migration completed")
 
 	svc := service.New(pool, cfg.HMACSecret)
-	h := handler.New(svc,queue.New(10))
+
+	// Queue + Worker pool
+	q := queue.New(100)
+	pool4Workers := worker.New(q.Chan(), svc, 4)
+	ctx, cancel := context.WithCancel(context.Background())
+	var wg sync.WaitGroup
+	pool4Workers.Start(ctx, &wg)
+	h := handler.New(svc, q)
 
 	// Router
 	r := gin.New()
@@ -66,10 +79,29 @@ func main() {
 		v1.POST("/events", h.PostEvent)
 		v1.GET("/events", h.ListEvents)
 	}
-	log.Printf("Starting server on %s", cfg.Port)
 
-	if err := r.Run(":" + cfg.Port); err != nil {
-		log.Fatalf("Failed to start server: %v", err)
-		return
+	srv := &http.Server{Addr: ":" + cfg.Port, Handler: r}
+	go func() {
+		log.Printf("Server is running on port %s", cfg.Port)
+		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Fatalf("Failed to start server: %v", err)
+		}
+	}()
+
+	// graceful shutdown
+
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+	<-quit
+
+	log.Println("Shutting down server...")
+	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer shutdownCancel()
+	if err := srv.Shutdown(shutdownCtx); err != nil {
+		log.Fatalf("Server forced to shutdown: %v", err)
 	}
+	log.Println("Server exiting...")
+	cancel()  // signal workers to drain and stop
+	wg.Wait() // wait for workers to finish
+	log.Println("All workers stopped, exiting now.")
 }
