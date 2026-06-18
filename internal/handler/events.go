@@ -56,3 +56,62 @@ func (h *Handler) ListEvents(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{"events": events, "count": len(events)})
 }
+
+func (h *Handler) ListEventsFiltered(c *gin.Context) {
+	tenant := c.MustGet("tenant").(*db.GetTenantByAPIKeyRow)
+	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "10"))
+	offset, _ := strconv.Atoi(c.DefaultQuery("offset", "0"))
+
+	params := db.ListEventsFileredParams{
+		TenantID:   tenant.ID,
+		PageLimit:  int32(limit),
+		PageOffset: int32(offset),
+	}
+
+	if v := c.Query("actor_id"); v != "" {
+		params.ActorID = v
+	}
+	if v := c.Query("action"); v != "" {
+		params.Action = v
+	}
+	if v := c.Query("resource_id"); v != "" {
+		params.ResourceID = v
+	}
+	if v := c.Query("resource_type"); v != "" {
+		params.ResourceType = v
+	}
+	if v := c.Query("start_time"); v != "" {
+		if t, err := time.Parse(time.RFC3339, v); err == nil {
+			params.StartTime = pgtype.Timestamptz{Time: t, Valid: true}
+		}
+	}
+	if v := c.Query("end_time"); v != "" {
+		if t, err := time.Parse(time.RFC3339, v); err == nil {
+			params.EndTime = pgtype.Timestamptz{Time: t, Valid: true}
+		}
+	}
+
+	events, err := h.svc.ListEventsFiltered(c.Request.Context(), params)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to list events", "details": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"events": events, "count": len(events)})
+}
+
+func (h *Handler) VerifyChain(c *gin.Context) {
+	tenant := c.MustGet("tenant").(*db.GetTenantByAPIKeyRow)
+	tenantID, _ := uuid.FromBytes(tenant.ID.Bytes[:])
+
+	result, err := h.svc.VerifyChain(c.Request.Context(), tenantID, tenant.HmacSecret)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to verify chain", "details": err.Error()})
+		return
+	}
+	status := http.StatusOK
+	if !result.Verified {
+		status = http.StatusConflict
+	}
+	c.JSON(status, result)
+}	

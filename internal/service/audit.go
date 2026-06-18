@@ -126,6 +126,10 @@ func (s *AuditService) ListEvents(ctx context.Context, tenantID uuid.UUID, limit
 	})
 }
 
+func (s *AuditService) ListEventsFiltered(ctx context.Context, params db.ListEventsFileredParams) ([]db.AuditEvent, error) {
+	return s.queries.ListEventsFilered(ctx, params)
+}
+
 func (s *AuditService) computeEventHash(payload model.IngestPayload, prevHash string, tenantSecret string) string {
 	secret := tenantSecret
 	if secret == "" {
