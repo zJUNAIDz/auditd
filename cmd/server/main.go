@@ -13,6 +13,7 @@ import (
 	"github.com/zjunaidz/auditd/internal/config"
 	"github.com/zjunaidz/auditd/internal/handler"
 	"github.com/zjunaidz/auditd/internal/middleware"
+	"github.com/zjunaidz/auditd/internal/queue"
 	"github.com/zjunaidz/auditd/internal/service"
 )
 
@@ -43,7 +44,7 @@ func main() {
 	log.Println("Database migration completed")
 
 	svc := service.New(pool, cfg.HMACSecret)
-	h := handler.New(svc)
+	h := handler.New(svc,queue.New(10))
 
 	// Router
 	r := gin.New()
