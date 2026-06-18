@@ -11,6 +11,7 @@ type Config struct {
 	DatabaseURL string
 	Port        string
 	HMACSecret  string
+	AdminKey    string
 }
 
 func Load() (*Config, error) {
@@ -20,6 +21,7 @@ func Load() (*Config, error) {
 		DatabaseURL: os.Getenv("DB_URL"),
 		Port:        os.Getenv("PORT"),
 		HMACSecret:  os.Getenv("HMAC_SECRET"),
+		AdminKey:    os.Getenv("ADMIN_KEY"),
 	}
 
 	if cfg.DatabaseURL == "" {
@@ -30,6 +32,9 @@ func Load() (*Config, error) {
 	}
 	if cfg.Port == "" {
 		cfg.Port = "8080"
+	}
+	if cfg.AdminKey == "" {
+		return nil, fmt.Errorf("ADMIN_KEY is required")
 	}
 	return cfg, nil
 }
