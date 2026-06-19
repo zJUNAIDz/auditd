@@ -27,10 +27,11 @@ func (h *Handler) PostEvent(c *gin.Context) {
 	tenantID, _ := uuid.FromBytes(tenant.ID.Bytes[:])
 
 	payload := model.IngestPayload{
-		Input:     input,
-		TenantID:  tenantID,
-		Timestamp: time.Now().UTC(),
-		ID:        uuid.New(),
+		Input:        input,
+		TenantID:     tenantID,
+		Timestamp:    time.Now().UTC().Truncate(time.Microsecond),
+		ID:           uuid.New(),
+		TenantSecret: tenant.HmacSecret,
 	}
 
 	if !h.queue.Enqueue(payload) {

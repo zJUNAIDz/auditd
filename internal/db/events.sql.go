@@ -157,10 +157,10 @@ func (q *Queries) InsertEvent(ctx context.Context, arg InsertEventParams) (pgtyp
 }
 
 const listAllEventsOrdered = `-- name: ListAllEventsOrdered :many
-SELECT id, tenant_id, actor_id, actor_type, action, resource_type, resource_id, metadata, timestamp, prev_hash, hash, created_at 
+SELECT id, tenant_id, actor_id, actor_type, action, resource_type, resource_id, metadata, timestamp, prev_hash, hash, created_at
 FROM audit_events
 WHERE tenant_id = $1
-ORDER BY timestamp ASC
+ORDER BY created_at ASC
 `
 
 func (q *Queries) ListAllEventsOrdered(ctx context.Context, tenantID pgtype.UUID) ([]AuditEvent, error) {
@@ -251,8 +251,8 @@ AND ($2::TEXT IS NULL OR actor_id = $2)
 AND ($3::TEXT IS NULL OR action = $3)
 AND ($4::TEXT IS NULL OR resource_type = $4)
 AND ($5::TEXT IS NULL OR resource_id = $5)
-AND ($6::timestampz IS NULL OR timestamp >= $6)
-AND ($7::timestampz IS NULL OR timestamp <= $7)
+AND ($6::timestamptz IS NULL OR timestamp >= $6)
+AND ($7::timestamptz IS NULL OR timestamp <= $7)
 ORDER BY timestamp DESC
 LIMIT $9 
 OFFSET $8

@@ -73,11 +73,15 @@ func main() {
 		c.JSON(http.StatusOK, gin.H{"status": "ok"})
 	})
 
+	// Admin routes
+	admin:= r.Group("/admin", middleware.AdminAuthMiddleware(cfg.AdminKey))
+	admin.POST("/tenants", h.CreateTenant)
 	// Protected routes
 	v1 := r.Group("/v1", middleware.TenantAuthMiddleware(svc))
 	{
 		v1.POST("/events", h.PostEvent)
-		v1.GET("/events", h.ListEvents)
+		v1.GET("/events", h.ListEventsFiltered)
+		v1.GET("/verify", h.VerifyChain)
 	}
 
 	srv := &http.Server{Addr: ":" + cfg.Port, Handler: r}
