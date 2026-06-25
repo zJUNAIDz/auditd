@@ -58,3 +58,11 @@ AND (@end_time::timestamptz IS NULL OR timestamp <= @end_time)
 ORDER BY timestamp DESC
 LIMIT @page_limit 
 OFFSET @page_offset;
+
+-- name: ListEventsForExport :many
+SELECT *
+FROM audit_events
+WHERE tenant_id = $1
+AND timestamp >= $2
+AND timestamp <= $3
+ORDER BY timestamp ASC;

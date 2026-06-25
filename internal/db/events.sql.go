@@ -259,15 +259,15 @@ OFFSET $8
 `
 
 type ListEventsFileredParams struct {
-	TenantID     pgtype.UUID `json:"tenant_id"`
-	ActorID      string      `json:"actor_id"`
-	Action       string      `json:"action"`
-	ResourceType string      `json:"resource_type"`
-	ResourceID   string      `json:"resource_id"`
-	StartTime    interface{} `json:"start_time"`
-	EndTime      interface{} `json:"end_time"`
-	PageOffset   int32       `json:"page_offset"`
-	PageLimit    int32       `json:"page_limit"`
+	TenantID     pgtype.UUID        `json:"tenant_id"`
+	ActorID      string             `json:"actor_id"`
+	Action       string             `json:"action"`
+	ResourceType string             `json:"resource_type"`
+	ResourceID   string             `json:"resource_id"`
+	StartTime    pgtype.Timestamptz `json:"start_time"`
+	EndTime      pgtype.Timestamptz `json:"end_time"`
+	PageOffset   int32              `json:"page_offset"`
+	PageLimit    int32              `json:"page_limit"`
 }
 
 func (q *Queries) ListEventsFilered(ctx context.Context, arg ListEventsFileredParams) ([]AuditEvent, error) {
@@ -282,6 +282,54 @@ func (q *Queries) ListEventsFilered(ctx context.Context, arg ListEventsFileredPa
 		arg.PageOffset,
 		arg.PageLimit,
 	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []AuditEvent
+	for rows.Next() {
+		var i AuditEvent
+		if err := rows.Scan(
+			&i.ID,
+			&i.TenantID,
+			&i.ActorID,
+			&i.ActorType,
+			&i.Action,
+			&i.ResourceType,
+			&i.ResourceID,
+			&i.Metadata,
+			&i.Timestamp,
+			&i.PrevHash,
+			&i.Hash,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listEventsForExport = `-- name: ListEventsForExport :many
+SELECT id, tenant_id, actor_id, actor_type, action, resource_type, resource_id, metadata, timestamp, prev_hash, hash, created_at
+FROM audit_events
+WHERE tenant_id = $1
+AND timestamp >= $2
+AND timestamp <= $3
+ORDER BY timestamp ASC
+`
+
+type ListEventsForExportParams struct {
+	TenantID    pgtype.UUID        `json:"tenant_id"`
+	Timestamp   pgtype.Timestamptz `json:"timestamp"`
+	Timestamp_2 pgtype.Timestamptz `json:"timestamp_2"`
+}
+
+func (q *Queries) ListEventsForExport(ctx context.Context, arg ListEventsForExportParams) ([]AuditEvent, error) {
+	rows, err := q.db.Query(ctx, listEventsForExport, arg.TenantID, arg.Timestamp, arg.Timestamp_2)
 	if err != nil {
 		return nil, err
 	}
