@@ -206,3 +206,18 @@ func generateSecureKey(n int) string {
 	rand.Read(b)
 	return base64.URLEncoding.EncodeToString(b)
 }
+
+
+func (s *AuditService) StreamEventsForExport(ctx context.Context, tenantID uuid.UUID, from, to time.Time) (pgx.Rows, error) {
+	query := `
+		SELECT id, tenant_id, actor_id, actor_type, action,
+		       resource_type, resource_id, metadata,
+		       timestamp, prev_hash, hash, created_at
+		FROM audit_events
+		WHERE tenant_id = $1
+		  AND timestamp >= $2
+		  AND timestamp <= $3
+		ORDER BY timestamp ASC
+	`
+	return s.pool.Query(ctx, query, tenantID, from, to)
+}

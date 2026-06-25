@@ -82,6 +82,7 @@ func main() {
 		v1.POST("/events", h.PostEvent)
 		v1.GET("/events", h.ListEventsFiltered)
 		v1.GET("/verify", h.VerifyChain)
+		v1.GET("/export", h.ExportEvents)
 	}
 
 	srv := &http.Server{Addr: ":" + cfg.Port, Handler: r}
